@@ -11,6 +11,7 @@ __author__ = "Lorenz Leitner"
 __version__ = "1.4"
 __license__ = "GNU GPL v3.0"
 
+from typing import Iterator
 import pandas as pd
 import os
 import subprocess
@@ -29,7 +30,7 @@ class Spmf:
                  memory=0):
         self.executable_dir_ = spmf_bin_location_dir
         self.executable_ = "spmf.jar"
-        
+
         self.is_exist_executable_ = os.path.isfile(
             os.path.join(self.executable_dir_, self.executable_))
 
@@ -126,7 +127,7 @@ class Spmf:
         patterns = []
         for line in lines:
             line = line.strip()
-            patterns.append(line.split(" -1 "))
+            patterns.append(line.split("#"))
 
         self.patterns_ = patterns
         return patterns
@@ -138,27 +139,41 @@ class Spmf:
         """
         # TODO: Optional parameter for pickle file name
 
-        if not self.patterns_:
-            self.parse_output()
-
-        patterns_dict_list = []
-        for pattern_sup in self.patterns_:
-            pattern = pattern_sup[:-1]
-            sup = pattern_sup[-1:][0]
-            sup = sup.strip()
-            if not sup.startswith("#SUP"):
-                print("support extraction failed")
-            sup = sup.split()
-            sup = sup[1]
-
-            patterns_dict_list.append({'pattern': pattern, 'sup': int(sup)})
-
-        df = pd.DataFrame(patterns_dict_list)
+        patterns_list, names = self.to_list()
+        names.insert(0, 'pattern')
+        df = pd.DataFrame([{name: pattern[i] for i, name in enumerate(names)}
+                           for pattern in patterns_list])
         self.df_ = df
 
         if pickle:
             df.to_pickle(self.output_.replace(".txt", ".pkl"))
         return df
+
+    def to_list(self):
+        if not self.patterns_:
+            self.parse_output()
+
+        patterns_list = []
+        for pattern_sup in self.patterns_:
+            pattern = pattern_sup[0]
+            if ' -1 ' in pattern:
+                pattern = [p.split() for p in pattern.split(' -1 ')[:-1]]
+            else:
+                pattern = pattern.split()
+            pattern_sup = pattern_sup[1:]
+
+            sups = []
+            for sup in pattern_sup:
+                sup = sup.split()[1:]
+                if len(sup) == 1:
+                    sup = int(sup[0])
+                else:
+                    sup = [int(s) for s in sup]
+                sups.append(sup)
+
+            patterns_list.append([pattern]+sups)
+        names = [sup.split()[0].strip(":").lower() for sup in pattern_sup]
+        return patterns_list, names
 
     def to_csv(self, file_name, df=None, list_as_string=True):
         """
@@ -181,3 +196,16 @@ class Spmf:
                 row['pattern'] = ','.join(row['pattern'])
 
             df.to_csv(file_name, sep=';', index=False)
+
+
+if __name__ == "__main__":
+    # spmf = Spmf("FPGrowth_itemsets", input_filename="contextPasquier99.txt",
+    #             output_filename="output.txt", arguments=[0.1])
+    spmf = Spmf("PrefixSpan", input_filename="contextPrefixSpan.txt",
+                output_filename="output.txt", arguments=['50%', 5, 'true'])
+    spmf.run()
+    L, names = spmf.to_list()
+    print(names)
+    for i in range(4):
+        print(L[i])
+    print(spmf.to_pandas_dataframe().head())
